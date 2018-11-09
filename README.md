@@ -7,7 +7,7 @@ https://rdgain.github.io/publications
 
 File format:
 
-(true if rhea : false)_(rollout depth)_(population size)_(FM call budget)_(heuristic)_(true if dynamic rollout depth : false)
+(true if rhea : false)\_(rollout depth)\_(population size)\_(FM call budget)\_(heuristic)\_(true if dynamic rollout depth : false)
 
 Data from 3 experiments:
 - Score heuristic function vs Win/Lose only
