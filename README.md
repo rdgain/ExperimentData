@@ -15,10 +15,10 @@ In each file:
 
 ## Py folder
 
-Scripts used to process results and generate plots and result summary. Run *main.py*.
+Scripts used to process results and generate plots and result summary. Run *main.py*. Also included is a python version of the n-tuple system used in the paper, which can be used to rebuild the NTBEA model based on the result logs and perform further analysis as a result.
 
 ## Plots folders
 
 1tuples: plots of all 1tuples based on the results folder, 1 plot per parameter.
 2tuples: plots of all 2tuples based on the results folder, 1 plot per combination of 2 parameters.
-fitness: plots of fitness evaluation progression in NTBEA, 1 plot per game.
+fitness: plots of fitness evaluation progression in NTBEA (values of solutions at each iteration based on internal n-tuple model, in light blue; value based on internal n-tuple model for seeded solution, in dark blue; vertical lines showing points where NTBEA changes best solution recommendation), 1 plot per game.

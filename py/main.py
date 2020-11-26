@@ -12,6 +12,9 @@ import scipy
 import seaborn as sns; sns.set(color_codes=True)
 import numpy as np
 import pylab
+from collections import Counter
+from ntbea import *
+from math import sqrt
 
 file_path = "exp6"  # Seeded with sota, 1500 iterations
 # file_path = "test"
@@ -133,25 +136,57 @@ def check_param_dependency(param_idx, solution_str):
 
 def process_file_fitness(f_name):
     fitness = []
+    fit_std = []
+
     best = []
+    all_s = []
+
+    sota = []
+    sota_std = []
+
+    ss = SearchSpace("space", len(param_space))
+    n_tuple = NTupleLandscape(ss, tuple_config=[1, 2, ss.get_num_dims()], ucb_epsilon=sqrt(2))
+    n_tuple.init()
+
     with open(file_path + "/" + f_name) as f:
         lines = f.readlines()
+        s_sota = np.array([])
         for i in range(len(lines)):
             line = lines[i]
             if "Solution evaluated" in line:
                 split_line = line.split(':')
                 split_line2 = split_line[1].split(']')
                 solution_str = split_line2[0].strip()[1:].replace(',', '').split()
+                all_s.append(', '.join(solution_str))
+
+                point = np.array([int(x) for x in solution_str])
                 q = float(split_line2[1].strip())
+                n_tuple.add_evaluated_point(point, q)
+
+                if s_sota.size == 0:
+                    s_sota = point
+                mean, std = n_tuple.get_mean_estimtate(s_sota)
+                sota.append(mean)
+                sota_std.append(std)
+
                 best_solution = lines[i + 1].split(':')[1].split(']')[0].strip()[1:]
 
                 if q > -1:
-                    fitness.append(q)
+                    mean, std = n_tuple.get_mean_estimtate(point)
+                    fitness.append(mean)
+                    fit_std.append(std)
                     best.append(0 if ', '.join(solution_str) != best_solution else 1)
                 else:
                     print(split_line2[0].strip() + "]")
+            # if "Solution returned" in line:
+            #     best_solution = line.split(':')[1].split(']')[0].strip()[1:]
+            #     eval = 0
+            #     for s in all_s:
+            #         if s == best_solution:
+            #             eval += 1
+            #     print(f_name, eval)
 
-    return fitness, best
+    return fitness, fit_std, best, sota, sota_std
 
 
 def plot(values):
@@ -242,7 +277,7 @@ def plot_1tuples_all_games(only_files):
 
     for param in params:
         # new figure for each param showing its plot in each of the 20 games
-        fig, axes = plt.subplots(4, 5, figsize=(15, 15))
+        fig, axes = plt.subplots(5, 4, figsize=(15, 15))
         axes = axes.flatten()
         # fig = plt.figure(figsize=(15, 15))
         for game in games:
@@ -257,51 +292,73 @@ def plot_1tuples_all_games(only_files):
                     y.append(fitness)
 
                 n = len(param_space[parameters[param]])
-                data = [[0 for _ in range(n+2)] for _ in range(6)]
-                maxx = 100
-                for j in range(len(x)):
-                    if data[int(y[j]/0.2)][x[j]+1] < maxx:
-                        data[int(y[j]/0.2)][x[j]+1] += 1
-
-                # Normalize data?
-                minv = data[0][0]
-                maxv = data[0][0]
-                for i in range(len(data)):
-                    for j in range(len(data[i])):
-                        if data[i][j] < minv:
-                            minv = data[i][j]
-                        if data[i][j] > maxv:
-                            maxv = data[i][j]
-                for i in range(len(data)):
-                    for j in range(len(data[i])):
-                        data[i][j] = (data[i][j] - minv) * 1.0 / (maxv - minv)
-
-                im = ax.imshow(data, interpolation='bilinear', extent=[-1.5, n+0.5, -0.1, 1.1], aspect=n,
-                               origin='lower', cmap='copper', vmin=0.0, vmax=1.0)
+                # data = [[0 for _ in range(n+2)] for _ in range(6)]
+                # maxx = 100
+                # for j in range(len(x)):
+                #     if data[int(y[j]/0.2)][x[j]+1] < maxx:
+                #         data[int(y[j]/0.2)][x[j]+1] += 1
+                #
+                # # Normalize data?
+                # minv = data[0][0]
+                # maxv = data[0][0]
+                # for i in range(len(data)):
+                #     for j in range(len(data[i])):
+                #         if data[i][j] < minv:
+                #             minv = data[i][j]
+                #         if data[i][j] > maxv:
+                #             maxv = data[i][j]
+                # for i in range(len(data)):
+                #     for j in range(len(data[i])):
+                #         data[i][j] = (data[i][j] - minv) * 1.0 / (maxv - minv)
+                #
+                # im = ax.imshow(data, interpolation='spline16', extent=[-1.5, n+0.5, -0.1, 1.1], aspect=n,
+                #                origin='lower', cmap='copper', vmin=0.0, vmax=1.0)
 
                 # for i in range(len(x)):
                 #     ax.scatter(x[i], y[i], alpha=0.01, color='b')
 
-                ax.set_xticks([x for x in range(n)])
-                ax.set_xticklabels(param_space[parameters[param]])
-                ax.set_xlim(-0.5, n-0.5)
+                data = [[[0.0 for _ in range(4)]] for _ in range(n)]
 
-                ax.set_yticks([0.0, 0.2, 0.4, 0.6, 0.8, 1.0])
-                ax.set_title(str(game) + " " + game_mapping[game], size=16)
-                ax.label_outer()
+                max_fitness = 1.01
+                for i in range(n):
+                    fit = np.average([y[j] for j in range(len(y)) if x[j] == i])
+                    v = abs((fit - max_fitness) / max(fit, max_fitness))
+                    data[i][0][0] = (1.0 if fit == 0 else v)
+                    data[i][0][1] = 1.0  # (1.0 if fit == 0 else v)  # abs((fit - min_fitness) / max(fit, min_fitness))
+                    data[i][0][2] = 1.0  # (1.0 if fit == 0 else v)
+                    data[i][0][3] = (1.0 if fit == 0 else 0.5)
 
-        # for ax in axes:
-        #     if any(isinstance(x, str) for x in param_space[parameters[param]]):  # rotate strings so labels show nicer
-        #         plt.setp(ax.xaxis.get_majorticklabels(), rotation=-45, ha="left", rotation_mode="anchor")
+                im = ax.imshow(data, interpolation='spline16', cmap='RdYlGn', vmin=0.0, vmax=1.0, origin='lower')
+
+                weight_counter = Counter(x)
+                s_weights = [weight_counter[x[i]]*0.7 for i, _ in enumerate(x)]
+                ax.scatter([0]*len(x), x, color='black', s=s_weights)
+
+                ax.set_yticks([x for x in range(n)])
+                ax.set_yticklabels([x for x in range(n)])
+                # ax.set_yticklabels(param_space[parameters[param]])
+                ax.set_ylim(-0.5, n-0.5)
+
+                # ax.set_yticks([0.0, 0.2, 0.4, 0.6, 0.8, 1.0])
+                ax.set_xticks([])
+                ax.set_title(str(game) + " " + game_mapping[game], size=18)
+                # ax.label_outer()
+
+        for ax in axes:
+            if any(isinstance(x, str) for x in param_space[parameters[param]]):  # rotate strings so labels show nicer
+                plt.setp(ax.xaxis.get_majorticklabels(), rotation=-45, ha="left", rotation_mode="anchor")
+            plt.setp(ax.xaxis.get_majorticklabels(), fontsize=15)
+            plt.setp(ax.yaxis.get_majorticklabels(), fontsize=15)
 
         # cbar = fig.colorbar(im, extend="both", ax=axes)
         # cbar.set_label(label="normalized number of occurrences", size=18)
 
-        fig.text(0.5, 0.04, "parmeter values", ha='center', va='center', size=20)
-        fig.text(0.06, 0.5, "fitness", ha='center', va='center', rotation='vertical', size=20)
+        # fig.text(0.5, 0.37, "Parmeter Values", ha='center', va='center', size=20)
+        # fig.text(0.06, 0.7, "fitness", ha='center', va='center', rotation='vertical', size=20)
 
-        plt.tight_layout(rect=[0.06, 0.07, 1, 1])
+        plt.tight_layout(rect=[0.06, 0.3, 1, 1])
         plt.savefig(plot_path + "/" + parameters[param] + ".png")
+        # plt.show()
         plt.close(fig)
 
 
@@ -319,6 +376,8 @@ def plot_2tuples_all_games(only_files):
 
     pars1 = parameters
     pars2 = parameters
+    # pars2 = ["mutation_type"]
+    # pars1 = ["crossover_type"]
     # pars1 = ["population_size"]
     # pars2 = ["individual_length"]
 
@@ -359,15 +418,30 @@ def plot_2tuples_all_games(only_files):
                         min_fitness = 0.01
                         max_fitness = 1.01
                         for j in range(len(x_)):
-                            fit = np.average(y_[(x_[j], z_[j])]) + 0.01
-                            data[z_[j]][x_[j]][0] = abs((fit - max_fitness) / max(fit, max_fitness))
-                            data[z_[j]][x_[j]][1] = abs((fit - min_fitness) / max(fit, min_fitness))
-                            data[z_[j]][x_[j]][2] = 0.2
-                            data[z_[j]][x_[j]][3] = 0.85
+                            fit = np.average(y_[(x_[j], z_[j])])
+                            v = abs((fit - max_fitness) / max(fit, max_fitness))
+                            data[z_[j]][x_[j]][0] = (1.0 if fit == 0 else v)
+                            data[z_[j]][x_[j]][1] = 1.0  # (1.0 if fit == 0 else v)  # abs((fit - min_fitness) / max(fit, min_fitness))
+                            data[z_[j]][x_[j]][2] = 1.0  # (1.0 if fit == 0 else v)
+                            data[z_[j]][x_[j]][3] = 1.0
 
                         im = ax.imshow(data, interpolation='spline16', cmap='RdYlGn', vmin=0.0, vmax=1.0, origin='lower')
 
-                        ax.scatter(x, z, alpha=0.01, color='black', s=100)
+                        # counts = {}
+                        # for i in range(len(x)):
+                        #     for j in range(len(z)):
+                        #         if (i, j) not in counts:
+                        #             counts[(i, j)] = 0
+                        #         counts[(i, j)] += 1
+                        # for (i, j) in counts:
+                        #     v = counts[(i, j)]
+                        #     ax.scatter(i, j, color='black', alpha=0.005*v, s=0.5*v)
+                        # ax.scatter(x, z, alpha=0.005, color='black', s=100)
+                        combos = list(zip(x, z))
+                        weight_counter = Counter(combos)
+                        s_weights = [weight_counter[(x[i], z[i])] for i, _ in enumerate(x)]
+                        a_weights = [weight_counter[(x[i], z[i])]*0.005 for i, _ in enumerate(x)]
+                        ax.scatter(x, z, color='black', s=s_weights)
 
                         ax.set_ylim(-0.5, len(param_space[p2])-0.5)
 
@@ -379,21 +453,23 @@ def plot_2tuples_all_games(only_files):
                         ax.set_yticks(yticks)
                         ax.set_yticklabels(param_space[p2])
 
-                        ax.set_title(str(game) + " " + game_mapping[game], size=16)
+                        ax.set_title(str(game) + " " + game_mapping[game], size=20)
                         ax.label_outer()
 
                 for ax in axes:
                     if any(isinstance(x, str) for x in param_space[p1]):  # rotate strings so labels show nicer
                         plt.setp(ax.xaxis.get_majorticklabels(), rotation=-45, ha="left", rotation_mode="anchor")
-                        # plt.setp(ax.xaxis.get_majorticklabels(), fontsize=14)
-                        # plt.setp(ax.yaxis.get_majorticklabels(), fontsize=14)
+                    plt.setp(ax.xaxis.get_majorticklabels(), fontsize=16)
+                    plt.setp(ax.yaxis.get_majorticklabels(), fontsize=16)
 
                 # cbar = fig.colorbar(im, extend="both", ax=axes)
                 # cbar.set_label(label="fitness", size=18)
 
                 # outer axes labels
-                fig.text(0.5, 0.04, p1, ha='center', va='center', size=20)
-                fig.text(0.06, 0.5, p2, ha='center', va='center', rotation='vertical', size=20)
+                p1_label = p1.replace("_", " ").capitalize()
+                p2_label = p2.replace("_", " ").capitalize()  # p2.split("_")[0].capitalize() + " " + p2.split("_")[1].capitalize()
+                fig.text(0.5, 0.04, p1_label, ha='center', va='center', size=28)
+                fig.text(0.03, 0.5, p2_label, ha='center', va='center', rotation='vertical', size=28)
 
                 plt.tight_layout(rect=[0.06, 0.045, 1, 1])
                 plt.savefig(plot_path + "/" + p1 + "-" + p2 + ".png")
@@ -461,10 +537,10 @@ def fitness_plots(only_files):
     for f in only_files:
         fig = plt.figure()
         ax = plt.gca()
-        ax.set_facecolor('black')
-        ax.grid(color='dimgrey', ls='--')
+        ax.set_facecolor('white')
+        ax.grid(color='whitesmoke', ls='--')
 
-        fitness, best = process_file_fitness(f)
+        fitness, f_std, best, sota, sota_std = process_file_fitness(f)
         n = len(fitness)
         x = np.array(range(n))
         data = [[0 for _ in range(n)] for _ in range(6)]
@@ -474,35 +550,47 @@ def fitness_plots(only_files):
         # ax.imshow(data, interpolation='bilinear', vmin=0.0, vmax=1.0, origin='lower', cmap='afmhot',
         #           extent=[0, n, -0.1, 1.1], aspect=n, zorder=-1)
 
-        from scipy.interpolate import make_interp_spline, BSpline
-        xnew = np.linspace(min(x), max(x), 300)
-        spl = make_interp_spline(x, fitness, k=1)  # type: BSpline
-        power_smooth = spl(xnew)
-        plt.plot(xnew, power_smooth, color='slategray', ls='-', zorder=1)
+        # from scipy.interpolate import make_interp_spline, BSpline
+        # xnew = np.linspace(min(x), max(x), 300)
+        # spl = make_interp_spline(x, fitness, k=1)  # type: BSpline
+        # power_smooth = spl(xnew)
+        # plt.plot(xnew, power_smooth, color='teal', ls='-', zorder=1)
 
-        # plt.plot(fitness, color='slategray', ls='-', zorder=1)
+        fitness=np.array(fitness)
+        f_std=np.array(f_std)
+        plt.fill_between(fitness-f_std, fitness+f_std, color='turquoise', zorder=1)
+        plt.plot(fitness, color='paleturquoise', ls='-', zorder=1)
+
+        sota=np.array(sota)
+        sota_std=np.array(sota_std)
+        plt.fill_between(sota-sota_std, sota+sota_std, color='teal', zorder=2)
+        plt.plot(sota, color='teal', ls='-', zorder=2)
 
         # trend line
-        z = np.polyfit(x, fitness, 1)
-        p = np.poly1d(z)
-        plt.plot(x, p(x), color='white', ls='--')
+        # z = np.polyfit(x, fitness, 1)
+        # p = np.poly1d(z)
+        # plt.plot(x, p(x), color='red', ls='--')
 
         # highlight best solutions
         for i in range(len(best)):
             if best[i] == 1:
-                plt.scatter(i, fitness[i], color='lime', alpha=1, zorder=2)
+                plt.axvline(i, color='black', alpha=0.5, zorder=3)
+                # plt.scatter(i, fitness[i], color='black', alpha=1, zorder=3, s=100)
 
         for tick in ax.xaxis.get_major_ticks():
-            tick.label.set_fontsize(16)
+            tick.label.set_fontsize(20)
+        for tick in ax.yaxis.get_major_ticks():
+            tick.label.set_fontsize(20)
 
-        plt.xlabel("NTBEA iteration", fontsize=20)
-        plt.ylabel("fitness", fontsize=20)
+        plt.xlabel("NTBEA iteration", fontsize=28)
+        plt.ylabel("N-tuple model value", fontsize=28)
         plt.ylim(-0.05, 1.05)
         plt.xlim(0, n)
         plt.tight_layout()
         plt.savefig(plot_path + "/" + f.split('.')[0] + ".png")
-        plt.close(fig)
+
         # plt.show()
+        plt.close(fig)
 
 
 def solution_mapping(sol):
@@ -550,8 +638,11 @@ def main():
     plot_1tuples_all_games(only_files)
     plot_2tuples_all_games(only_files)
     # plot_1tuples_per_game(only_files)
-    fitness_plots(only_files)
-    win_rate_analysis(only_files)
+    # fitness_plots(only_files)
+    # win_rate_analysis(only_files)
+
+    # for f in only_files:
+    #     process_file_fitness(f)
 
 
 main()
